@@ -1,4 +1,6 @@
-import cv2
+import math
+import os
+import sys
 import torch
 import utils.misc as utils
 import torch.nn.functional as F
@@ -15,7 +17,6 @@ def train_one_epoch(
     args,
     datasize,
     start_time,
-    logger,
     writer=None,
 ):
     model.train()
@@ -60,8 +61,10 @@ def train_one_epoch(
             train_msssim = torch.cat(msssim_list, dim=0)
             train_msssim = torch.mean(
                 train_msssim.float(), dim=0)  # (num_stage)
+            time_now_string = datetime.now().strftime("%Y/%m/%d %H:%M:%S")
             if not hasattr(args, "rank"):
-                print_str = "Epoch[{}/{}], Step [{}/{}], lr:{:.2e} PSNR: {}, MSSSIM: {}".format(
+                print_str = "[{}] Epoch[{}/{}], Step [{}/{}], lr:{:.2e} PSNR: {}, MSSSIM: {}".format(
+                    time_now_string,
                     epoch + 1,
                     cfg["epoch"],
                     i + 1,
@@ -72,10 +75,11 @@ def train_one_epoch(
                 )
                 for k, v in additional_loss_item.items():
                     print_str += f", {k}: {v.item():.6g}"
-                logger.info(print_str)
+                print(print_str, flush=True)
 
             elif args.rank in [0, None]:
-                print_str = "Rank:{}, Epoch[{}/{}], Step [{}/{}], lr:{:.2e} PSNR: {}, MSSSIM: {}".format(
+                print_str = "[{}] Rank:{}, Epoch[{}/{}], Step [{}/{}], lr:{:.2e} PSNR: {}, MSSSIM: {}".format(
+                    time_now_string,
                     args.rank,
                     epoch + 1,
                     cfg["epoch"],
@@ -85,7 +89,7 @@ def train_one_epoch(
                     utils.RoundTensor(train_psnr, 2, False),
                     utils.RoundTensor(train_msssim, 4, False),
                 )
-                logger.info(print_str)
+                print(print_str, flush=True)
 
     train_stats = {
         "train_psnr": train_psnr,
@@ -94,7 +98,7 @@ def train_one_epoch(
     if hasattr(args, "distributed") and args.distributed:
         train_stats = utils.reduce_dict(train_stats)
 
-    # ADD train performance TO TENSORBOARD
+    # ADD train_PSNR TO TENSORBOARD
     if not hasattr(args, "rank"):
         h, w = output_list[-1].shape[-2:]
         writer.add_scalar(
@@ -112,9 +116,6 @@ def train_one_epoch(
                 writer.add_scalar(f"Stat/{k}_c", m.Lip_c[0].item(), epoch + 1)
                 writer.add_scalar(f"Stat/{k}_w", m.abssum_max, epoch + 1)
 
-        writer.add_image('train/image_in', output_list[0][0].cpu(), epoch+1)
-        writer.add_image('train/image_gt', target_list[0][0].cpu(), epoch+1)
-
     elif args.rank in [0, None] and writer is not None:
         h, w = output_list[-1].shape[-2:]
         writer.add_scalar(
@@ -125,12 +126,9 @@ def train_one_epoch(
             ), epoch + 1
         )
         writer.add_scalar("Train/lr", lr, epoch + 1)
-        writer.add_image('train/image_in', output_list[0][0].cpu(), epoch+1)
-        writer.add_image('train/image_gt', target_list[0][0].cpu(), epoch+1)
-
     epoch_end_time = datetime.now()
-    logger.info(
-        "-> time/epoch: \tCurrent:{:.2f} \tAverage:{:.2f}".format(
+    print(
+        "Time/epoch: \tCurrent:{:.2f} \tAverage:{:.2f}".format(
             (epoch_end_time - epoch_start_time).total_seconds(),
             (epoch_end_time - start_time).total_seconds() / (epoch + 1),
         )
@@ -140,8 +138,7 @@ def train_one_epoch(
 
 
 @torch.no_grad()
-def evaluate(model, dataloader, device, cfg, args, epoch, logger, save_img=False, img_out_dir=None):
-    # todo: save image
+def evaluate(model, dataloader, device, cfg, args, save_image=False):
     val_start_time = datetime.now()
     model.eval()
 
@@ -170,30 +167,27 @@ def evaluate(model, dataloader, device, cfg, args, epoch, logger, save_img=False
             # (batchsize, num_stage)
             val_msssim = torch.cat(msssim_list, dim=0)
             val_msssim = torch.mean(val_msssim.float(), dim=0)  # (num_stage)
+            time_now_string = datetime.now().strftime("%Y/%m/%d %H:%M:%S")
             if not hasattr(args, "rank"):
-                print_str = "Eval, Step [{}/{}], PSNR: {}, MSSSIM: {}".format(
+                print_str = "[{}], Step [{}/{}], PSNR: {}, MSSSIM: {}".format(
+                    time_now_string,
                     i + 1,
                     len(dataloader),
                     utils.RoundTensor(val_psnr, 2, False),
                     utils.RoundTensor(val_msssim, 4, False),
                 )
-                logger.info(print_str)
+                print(print_str, flush=True)
 
             elif args.rank in [0, None]:
-                print_str = "Rank:{}, Eval, Step [{}/{}], PSNR: {}, MSSSIM: {}".format(
+                print_str = "[{}] Rank:{}, Step [{}/{}], PSNR: {}, MSSSIM: {}".format(
+                    time_now_string,
                     args.rank,
                     i + 1,
                     len(dataloader),
                     utils.RoundTensor(val_psnr, 2, False),
                     utils.RoundTensor(val_msssim, 4, False),
                 )
-                logger.info(print_str)
-
-    # save image to folder
-    if save_img and img_out_dir:
-        img_i = 255*output_list[0][0].cpu().numpy()[::-1].transpose(1, 2, 0)
-        cv2.imwrite(f'{img_out_dir}/img_recon_e{epoch:03d}.png',
-                    img_i, [cv2.IMWRITE_PNG_COMPRESSION, 0])
+                print(print_str, flush=True)
 
     val_stats = {
         "val_psnr": val_psnr,
@@ -202,77 +196,8 @@ def evaluate(model, dataloader, device, cfg, args, epoch, logger, save_img=False
     if hasattr(args, "distributed") and args.distributed:
         val_stats = utils.reduce_dict(val_stats)
     val_end_time = datetime.now()
-    logger.info(
-        "-> total time on evaluate: \t{:.2f}".format(
-            (val_end_time - val_start_time).total_seconds()
-        )
-    )
-
-    return val_stats
-
-
-@torch.no_grad()
-def test(model, dataloader, device, logger, img_out_dir, eval=False):
-    # todo: save image
-    val_start_time = datetime.now()
-    model.eval()
-
-    psnr_list = []
-    msssim_list = []
-    data_num = len(dataloader)
-
-    for i, data in enumerate(dataloader):
-        data = utils.to_cuda(data, device)
-        # forward pass
-        # output is a list for the case that has multiscale
-        assert data['img_id'].shape[0] == 1, 'batch size should equal to 1'
-        output_list = model(data)
-        if isinstance(output_list, dict):
-            output_list = output_list["output_list"]  # ignore the loss in eval
-        torch.cuda.synchronize()
-
-        # save image to folder
-        img_i = 255*output_list[0][0].cpu().numpy()[::-1].transpose(1, 2, 0)
-        cv2.imwrite(f'{img_out_dir}/img_recon{i:03d}.png',
-                    img_i, [cv2.IMWRITE_PNG_COMPRESSION, 0])
-
-        # eval
-        if eval:
-            target_list = [
-                F.adaptive_avg_pool2d(data["img_gt"], x.shape[-2:]) for x in output_list
-            ]
-
-            # compute psnr and msssim
-            psnr_i = utils.psnr_fn(output_list, target_list)[0, 0]
-            msssim_i = utils.msssim_fn(output_list, target_list)[0, 0]
-
-            logger.info(
-                "Frame #{}/{} PSNR: {:.2f}, MSSSIM: {:.4f}".format(i+1, data_num, psnr_i, msssim_i))
-            psnr_list.append(psnr_i)
-            msssim_list.append(msssim_i)
-        else:
-            print(f'''--> Finish: {">"*int(i*100/data_num)}{"|":>{100-int(i*100/data_num)}s} {i+1:03d}/{data_num:03d} \r''', end="")
-
-    # mean performance
-    # (batchsize, num_stage)
-    mean_psnr = torch.mean(torch.tensor(psnr_list))
-    mean_psnr = utils.RoundTensor(mean_psnr, 2, False)  # (num_stage)
-    # (batchsize, num_stage)
-    mean_msssim = torch.mean(torch.tensor(msssim_list))
-    mean_msssim = utils.RoundTensor(mean_msssim, 4, False)  # (num_stage)
-    logger.info("\n\nAverage PSNR: {}, MSSSIM: {}".format(
-        mean_psnr, mean_msssim))
-
-    val_stats = {
-        "psnr_list": psnr_list,
-        "msssim_list": msssim_list,
-        "mean_psnr": mean_psnr,
-        "mean_msssim": mean_msssim
-    }
-
-    val_end_time = datetime.now()
-    logger.info(
-        "-> total time on test: \t{:.2f}".format(
+    print(
+        "Time on evaluate: \t{:.2f}".format(
             (val_end_time - val_start_time).total_seconds()
         )
     )

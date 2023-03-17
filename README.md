@@ -24,7 +24,7 @@ We run with Python 3.8, you can set up a conda environment with all dependencies
 ```shell
 conda create -n enerv python=3.8
 conda activate enerv
-pip install -r requirements.txt 
+pip install -r requirements.txt
 ```
 
 ## Data
@@ -32,13 +32,30 @@ The paper's main experiments were conducted on:
 * [data/bunny](./data/bunny) directory contains big buck bunny video sequence
 * [UVG](http://ultravideo.fi/#testsequences) video sequences can be found in official website
 
-## Training
+## Train & Evaluate & Test
 
-### Training experiments
+### Train
 For now, we provide training and evaluation on original NeRV and our E-NeRV, by running following command with different configs and specified ```EXP_NAME```:
 
+```python
+python train.py --gpus 0 --cfg_path ./cfgs/E-NeRV-bunny.yaml --exp_name ENeRV/train
+--save_image
+
+--resume_path outputs/ENeRV/demo/checkpoint.pth
+```
+
 ```shell
-bash scripts/run.sh ./cfgs/E-NeRV-bunny.yaml EXP_NAME 29500
+bash scripts/run.sh ./cfgs/E-NeRV-bunny.yaml EXP_DEMO 29500
+```
+### Evaluate
+```python
+python eval.py --gpus 0 --cfg_path ./cfgs/E-NeRV-bunny.yaml --exp_name ENeRV/eval --ckp_path ./outputs/ENeRV/demo/checkpoint.pth
+```
+
+### Test
+```python
+python test.py --gpus 0 --cfg_path ./cfgs/E-NeRV-bunny.yaml --exp_name ENeRV/test --ckp_path ./outputs/ENeRV/demo/checkpoint.pth --frame_idx 'list(range(0,264))'
+--vid_path ./data/bunny --eval
 ```
 
 The logs and other outputs will be automaically saved to the output directory ```./outputs/EXP_NAME```

@@ -131,7 +131,6 @@ class E_NeRV_Generator(nn.Module):
             ngf = new_ngf
 
             # build head classifier, upscale feature layer, upscale img layer 
-            head_layer = [None]
             if cfg['sin_res']:
                 if i == len(cfg['stride_list']) - 1:
                     head_layer = nn.Conv2d(ngf, 3, 1, 1, bias=cfg['bias'])

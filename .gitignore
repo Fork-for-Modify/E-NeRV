@@ -10,6 +10,7 @@ __pycache__/
 # data/
 outputs/
 test.ipynb
+todo.md
 
 # Distribution / packaging
 .Python

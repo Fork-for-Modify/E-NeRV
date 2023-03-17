@@ -14,8 +14,7 @@ class PositionalEncoding(nn.Module):
             self.pe_embed = False
         else:
             self.lbase = float(pe_embed_b)
-            self.levels = float(pe_embed_l)
-            self.levels = int(self.levels)
+            self.levels = int(pe_embed_l)
             self.embed_length = 2 * self.levels
             self.pe_embed = True
     
