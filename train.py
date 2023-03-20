@@ -49,9 +49,8 @@ def main(args):
     time_str = datetime.now().strftime('%Y%m%d_%H%M%S')
     exp_dir = opj(args.output_dir, args.exp_name, time_str)
     os.makedirs(exp_dir, exist_ok=True)
-    if args.save_image:
-        img_out_dir = opj(exp_dir, 'img_out')
-        os.makedirs(img_out_dir, exist_ok=True)
+    img_out_dir = opj(exp_dir, 'img_out')
+    os.makedirs(img_out_dir, exist_ok=True)
 
     # env init
     logger = get_logger(opj(exp_dir, 'runtime.log'))  # logger
